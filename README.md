@@ -1,7 +1,4 @@
-from weasyprint import HTML
-
-# Content for the README.md style document
-markdown_content = """# 🚀 Personal Tracker Pro
+# 🚀 Personal Tracker Pro
 
 An elegant, mobile-friendly tracking application built with **FastAPI**, **PostgreSQL**, and **SortableJS**. Track items, increment usage with precise timestamps, and organize your lists with drag-and-drop functionality.
 
