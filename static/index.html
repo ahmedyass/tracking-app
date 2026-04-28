@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tracking Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <style>
+        .drag-ghost { opacity: 0.4; background-color: #f3f4f6; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans antialiased">
+    <div class="max-w-3xl mx-auto mt-10 p-6 bg-white rounded-xl shadow-sm border border-gray-100">
+        <div id="lists-view">
+            <h1 class="text-3xl font-semibold mb-6 text-gray-900">My Trackers</h1>
+            
+            <div class="flex gap-2 mb-6">
+                <input type="text" id="new-list-name" placeholder="New list name..." class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="createList()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">Create</button>
+            </div>
+
+            <ul id="lists-container" class="space-y-3"></ul>
+        </div>
+
+        <div id="items-view" class="hidden">
+            <button onclick="showListsView()" class="text-blue-600 hover:underline mb-4 inline-block">&larr; Back to Lists</button>
+            <h1 id="current-list-title" class="text-3xl font-semibold mb-6 text-gray-900"></h1>
+            
+            <div class="flex gap-2 mb-6">
+                <input type="text" id="new-item-name" placeholder="New item to track..." class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="createItem()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">Add Item</button>
+            </div>
+
+            <ul id="items-container" class="space-y-3"></ul>
+        </div>
+    </div>
+
+    <script>
+        let currentListId = null;
+        let sortableInstance = null;
+
+        // --- View Management ---
+        function showListsView() {
+            document.getElementById('items-view').classList.add('hidden');
+            document.getElementById('lists-view').classList.remove('hidden');
+            loadLists();
+        }
+
+        function showItemsView(listId, listName) {
+            currentListId = listId;
+            document.getElementById('current-list-title').innerText = listName;
+            document.getElementById('lists-view').classList.add('hidden');
+            document.getElementById('items-view').classList.remove('hidden');
+            loadItems();
+        }
+
+        // --- API Calls for Lists ---
+        async function loadLists() {
+            const res = await fetch('/api/lists');
+            const lists = await res.json();
+            const container = document.getElementById('lists-container');
+            container.innerHTML = '';
+            
+            lists.forEach(list => {
+                const li = document.createElement('li');
+                li.className = "flex justify-between items-center p-4 bg-gray-50 border rounded-lg hover:bg-gray-100 transition cursor-pointer";
+                li.innerHTML = `
+                    <span class="flex-1 text-lg font-medium" onclick="showItemsView(${list.id}, '${list.name}')">${list.name}</span>
+                    <button onclick="deleteList(${list.id}, event)" class="text-red-500 hover:text-red-700 px-3 py-1 rounded">Delete</button>
+                `;
+                container.appendChild(li);
+            });
+        }
+
+        async function createList() {
+            const input = document.getElementById('new-list-name');
+            if (!input.value) return;
+            await fetch('/api/lists', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: input.value })
+            });
+            input.value = '';
+            loadLists();
+        }
+
+        async function deleteList(id, event) {
+            event.stopPropagation(); // Prevent opening the list
+            if (!confirm('Are you sure you want to delete this list?')) return;
+            await fetch(`/api/lists/${id}`, { method: 'DELETE' });
+            loadLists();
+        }
+
+        // --- API Calls for Items ---
+        async function loadItems() {
+            const res = await fetch(`/api/lists/${currentListId}/items`);
+            const items = await res.json();
+            const container = document.getElementById('items-container');
+            container.innerHTML = '';
+
+            items.forEach(item => {
+                const li = document.createElement('li');
+                li.className = "flex justify-between items-center p-4 bg-white border shadow-sm rounded-lg cursor-grab";
+                li.dataset.id = item.id;
+                li.innerHTML = `
+                    <div class="flex items-center gap-4">
+                        <span class="text-gray-400 cursor-grab">⋮⋮</span>
+                        <span class="text-lg font-medium">${item.name}</span>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="text-xl font-bold text-gray-700 w-8 text-right" id="count-${item.id}">${item.count}</span>
+                        <button onclick="incrementItem(${item.id})" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-10 w-10 rounded-full flex items-center justify-center text-xl shadow-sm transition active:scale-95">+</button>
+                    </div>
+                `;
+                container.appendChild(li);
+            });
+
+            // Initialize Drag and Drop
+            if (sortableInstance) sortableInstance.destroy();
+            sortableInstance = new Sortable(container, {
+                animation: 150,
+                ghostClass: 'drag-ghost',
+                onEnd: async function () {
+                    const itemIds = Array.from(container.children).map(li => parseInt(li.dataset.id));
+                    await fetch(`/api/lists/${currentListId}/items/reorder`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ item_ids: itemIds })
+                    });
+                }
+            });
+        }
+
+        async function createItem() {
+            const input = document.getElementById('new-item-name');
+            if (!input.value) return;
+            await fetch(`/api/lists/${currentListId}/items`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: input.value })
+            });
+            input.value = '';
+            loadItems();
+        }
+
+        async function incrementItem(itemId) {
+            const res = await fetch(`/api/items/${itemId}/increment`, { method: 'POST' });
+            const data = await res.json();
+            document.getElementById(`count-${itemId}`).innerText = data.new_count;
+        }
+
+        // Initialize App
+        loadLists();
+    </script>
+</body>
+</html>
